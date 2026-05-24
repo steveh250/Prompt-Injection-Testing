@@ -2,9 +2,14 @@
 
 ## Overview
 
-The FIDES (Foundational Integration Defense for Execution Security) approach to prompt injection defence is fundamentally different from the Ollama inline approach. Rather than asking an LLM to detect attacks by reading raw content, FIDES **prevents injection structurally** by ensuring the main LLM never receives untrusted content in a form it can act on.
+The FIDES (Foundational Integration Defense for Execution Security) approach to prompt injection defence is fundamentally different from the Ollama inline fire break. Rather than inserting a detection gate that aborts the pipeline on a malicious verdict, FIDES **prevents injection structurally** at the middleware level — untrusted content is hidden from the main LLM before it can cause harm, and policy enforcement blocks downstream tool calls if the content is later found to be malicious.
 
-The core insight: if the main agent's LLM context never contains the raw payload, it cannot be manipulated by it. Classification still happens — but in a quarantined, isolated sub-call where the attack surface is minimised.
+Both approaches share the same goal — stopping a prompt injection from reaching an agent that would act on it — but they differ in *where* and *how* the stop happens:
+
+- **Ollama fire break**: detects → aborts the entire pipeline before the downstream agent is called.
+- **FIDES**: hides content structurally → classifies in quarantine → blocks specific downstream actions via policy, leaving the rest of the pipeline intact.
+
+The core FIDES insight: if the main agent's LLM context never contains the raw payload, it cannot be manipulated by it. Classification still happens — but in a quarantined, isolated sub-call where the attack surface is minimised.
 
 Reference: [microsoft/agent-framework — security sample](https://github.com/microsoft/agent-framework/tree/main/python/samples/02-agents/security)
 
@@ -131,12 +136,15 @@ The quarantine system prompt differs from the Ollama agent's in one critical way
 
 ## Comparison with Ollama Approach
 
-| Dimension | Ollama Agent | FIDES Agent |
+| Dimension | Ollama Fire Break | FIDES Agent |
 |---|---|---|
-| **Main LLM sees raw payload** | Yes | Never |
-| **Injection vector** | Possible — LLM reasons over raw attack | Structurally closed — main LLM has no payload |
-| **Defence type** | Probabilistic (LLM judgment) | Structural (content hiding) + probabilistic (quarantine LLM) |
-| **Quarantine isolation** | No | Yes — separate LLM call, no tools, data framing |
+| **Pipeline role** | Hard gate — aborts the entire pipeline on detection | Middleware gate — blocks specific downstream tool calls |
+| **On malicious detection** | Pipeline halts immediately (exit code 2 / `is_malicious:true`); downstream agent never called | Downstream agent actions blocked by policy enforcement; rest of pipeline can continue |
+| **On benign verdict** | Content passed through to downstream agent | Content passed through; main agent proceeds normally |
+| **Main LLM sees raw payload** | Yes — sentinel LLM reads the raw content directly | Never — raw payload is hidden before any LLM context receives it |
+| **Injection vector** | Sentinel LLM reasons over raw attack; sophisticated payloads may confuse it | Structurally closed for the main agent; quarantine LLM is isolated with explicit data framing |
+| **Defence type** | Probabilistic (LLM judgment on raw content) | Structural (content hiding) + probabilistic (quarantine LLM) |
+| **Quarantine isolation** | No — one LLM call sees raw content directly | Yes — separate LLM call, no tool access, content wrapped as data block |
 | **Scratchpad reasoning** | Yes | Yes (in quarantine LLM) |
 | **Output schema** | `{is_malicious, confidence, attack_types, severity}` | Same + `fides_metadata` |
 | **Audit trail** | Per-node results + full-structure result | Middleware events + variable store log |

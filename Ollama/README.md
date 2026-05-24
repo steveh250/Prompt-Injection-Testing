@@ -2,9 +2,17 @@
 
 ## Overview
 
-This folder contains an **inline LLM-based security agent** that detects prompt injection attacks by sending content directly to a locally-hosted Ollama model (Granite 4) and asking it to classify the payload.
+This folder contains an **inline LLM fire break** — a security agent that sits between document-extraction and execution in the **RFP Responder** multi-agent pipeline. Every piece of extracted content is scanned before it is passed to any downstream LLM. If a prompt injection attack is detected, the pipeline is **aborted immediately**. The malicious payload never reaches an agent that could act on it.
 
-The agent is designed as a drop-in component for the **RFP Responder** multi-agent pipeline: extracted requirements pass through the security sentinel before reaching any downstream LLM, blocking malicious payloads at the gate.
+```
+RFP document
+    └─► extract requirements
+            └─► [Security Agent — Agent-Sec-01]
+                    ├── malicious detected ──► ABORT (pipeline halted, exit code 2)
+                    └── benign verdict     ──► pass through to downstream LLM agent
+```
+
+The agent uses a local Ollama-hosted model (Granite 4) and communicates via an OpenAI-compatible API. It exposes both a standalone CLI mode (for scripted pipelines) and a Flask REST API for agent-to-agent (A2A) communication.
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for a full architectural diagram and design description.
 
@@ -80,7 +88,20 @@ curl -X POST http://localhost:5007/scan \
 
 ```bash
 python security_agent.py /path/to/requirements.json [output_audit.json]
-# Exit code 2 = malicious content detected
+# Exit code 0 = clean, pipeline may continue
+# Exit code 2 = malicious content detected, pipeline should abort
+```
+
+In a scripted pipeline, the caller checks the exit code to decide whether to proceed:
+
+```bash
+python security_agent.py requirements.json
+if [ $? -eq 2 ]; then
+    echo "SECURITY ALERT: aborting pipeline"
+    exit 1
+fi
+# safe to continue
+python downstream_agent.py requirements.json
 ```
 
 ---
@@ -100,6 +121,12 @@ The test harness reports the following metrics, matching the FIDES harness for d
 | **By Attack Type** | Detection rate broken down by `code_execution`, `obfuscation`, etc. |
 
 ---
+
+## Fire Break Behaviour
+
+The security agent is a **hard gate**: a `true` result from `is_malicious` causes the pipeline to stop. In A2A mode the calling orchestrator receives the full audit report and is responsible for honouring the abort signal. In standalone/CLI mode, exit code 2 signals abort to the shell.
+
+There is no partial pass-through. If any node in the scanned JSON is flagged as malicious, the entire payload is treated as compromised.
 
 ## Detection Approach
 

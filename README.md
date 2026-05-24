@@ -60,15 +60,21 @@ A curated dataset of **500 labelled prompts** (250 malicious, 250 benign) used b
 
 ## Approaches Compared
 
-### 1. Ollama — Inline LLM Security Agent
+### 1. Ollama — Inline LLM Fire Break
 
 **Folder:** `Ollama/`
 
-An inline security sentinel that sends each piece of content directly to a local Ollama-hosted LLM (Granite 4) and asks it to classify the payload as malicious or benign.
+An **inline fire break** that sits between the document-extraction step and the downstream execution agent in the RFP Responder pipeline. Every extracted requirement is scanned before it is passed forward. If the security agent detects a prompt injection attack, the pipeline is **aborted immediately** — the payload never reaches a downstream LLM that could act on it.
+
+```
+RFP document → extract requirements → [Security Agent] ──malicious──► ABORT
+                                                        └──benign────► downstream agent
+```
 
 - The LLM receives the raw content and applies a detailed threat-detection system prompt.
 - Two-phase analysis: per-node scan + full-structure scan for split-payload attacks.
-- Output: `is_malicious`, `confidence_score`, `severity`, `attack_types`.
+- On malicious detection: pipeline halts (exit code 2 in standalone mode; `is_malicious: true` in A2A mode).
+- On benign verdict: content is passed through to the next pipeline stage.
 
 See [`Ollama/README.md`](Ollama/README.md) and [`Ollama/ARCHITECTURE.md`](Ollama/ARCHITECTURE.md).
 
@@ -95,13 +101,16 @@ See [`MAF-FIDES/README.md`](MAF-FIDES/README.md) and [`MAF-FIDES/ARCHITECTURE.md
 
 | Dimension | Ollama Approach | FIDES Approach |
 |---|---|---|
-| **Defence mechanism** | Probabilistic detection (LLM judgment) | Structural prevention (content hiding) |
-| **Raw content seen by main LLM** | Yes | Never |
-| **Injection vector** | LLM may be tricked by clever payloads | Structurally impossible (main LLM has no raw content) |
-| **Classification method** | Direct LLM analysis with security system prompt | Quarantine LLM with isolation framing |
-| **False negative risk** | Higher — LLM may fail on novel attacks | Lower — quarantine framing reduces susceptibility |
+| **Pipeline role** | Inline fire break — aborts the pipeline on detection | Inline gate — blocks downstream tool calls on detection |
+| **On malicious detection** | Pipeline halted immediately (abort / exit code 2) | Downstream agent actions blocked by policy enforcement |
+| **On benign verdict** | Content passes through to the next pipeline stage | Content passes through; main agent proceeds normally |
+| **Defence mechanism** | Probabilistic detection — LLM classifies raw content | Structural prevention (hiding) + probabilistic quarantine |
+| **Raw content seen by main LLM** | Yes — sentinel LLM reads the raw payload | Never — raw payload is hidden before any LLM sees it |
+| **Injection vector** | Sentinel LLM may be tricked by a sufficiently clever payload | Structurally closed for main agent; quarantine LLM is isolated |
+| **Classification method** | Direct LLM analysis with security system prompt | Isolated quarantine LLM with explicit data-framing |
+| **False negative risk** | Higher — novel attacks may fool the sentinel LLM | Lower — quarantine framing and isolation reduce susceptibility |
 | **False positive risk** | Moderate | Moderate |
-| **Explainability** | Full scratchpad reasoning in output | Full scratchpad reasoning from quarantine LLM |
+| **Explainability** | Full scratchpad reasoning in output | Full scratchpad reasoning from quarantine LLM + middleware event log |
 
 ---
 

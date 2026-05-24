@@ -6,7 +6,12 @@ This folder implements Microsoft's **FIDES** (Foundational Integration Defense f
 
 Reference implementation: [microsoft/agent-framework — security sample](https://github.com/microsoft/agent-framework/tree/main/python/samples/02-agents/security)
 
-Unlike the Ollama approach (which asks an LLM to detect attacks in raw content), FIDES **prevents** injection structurally. Untrusted content is hidden from the main LLM before it can cause harm. When classification is needed, an isolated **quarantine LLM** processes the content with no tool access and explicit data-framing, making it highly resistant to being hijacked by the payload it is examining.
+Both approaches share the same goal — stopping a prompt injection before it reaches an agent that would execute it — but they work differently:
+
+- The **Ollama approach** is an inline fire break: it scans content directly with an LLM and **aborts the entire pipeline** if a threat is detected. The downstream agent is never called.
+- The **FIDES approach** acts at the middleware level: untrusted content is **hidden from the main LLM** before it can cause harm, and policy enforcement **blocks specific downstream tool calls** if the quarantine verdict is malicious. The isolation is structural rather than relying solely on LLM judgment.
+
+When classification is needed, an isolated **quarantine LLM** processes the hidden content with no tool access and explicit data-framing, making it highly resistant to being hijacked by the payload it is examining.
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for a full architectural diagram and design description.
 
