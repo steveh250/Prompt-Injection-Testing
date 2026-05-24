@@ -22,11 +22,12 @@ from fides_security_agent import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# Dataset lives at the repository root (one level up from MAF-FIDES/)
-DATASET_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "security_agent-Prompt_INJECTION_And_Benign_DATASET.jsonl",
-)
+# Look for the dataset in the same directory as this script first,
+# then fall back to the repository root (one level up) for repo-based runs.
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_local = os.path.join(_script_dir, "security_agent-Prompt_INJECTION_And_Benign_DATASET.jsonl")
+_repo_root = os.path.join(os.path.dirname(_script_dir), "security_agent-Prompt_INJECTION_And_Benign_DATASET.jsonl")
+DATASET_FILE = _local if os.path.exists(_local) else _repo_root
 
 
 def load_dataset(dataset_path: str) -> list[dict]:
