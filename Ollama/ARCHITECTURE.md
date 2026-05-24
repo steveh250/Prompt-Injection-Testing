@@ -2,7 +2,17 @@
 
 ## Overview
 
-The Ollama security agent is an **inline LLM-based classifier**. Raw content flows directly into the LLM, which applies a detailed security system prompt to reason about whether the payload is a prompt injection attack. The approach is analogous to a human security analyst reading a document and flagging suspicious content.
+The Ollama security agent is an **inline LLM fire break** — a hard gate inserted between document-extraction and execution in the RFP Responder multi-agent pipeline. Every extracted requirement is scanned before it is passed to any downstream agent. When the security agent returns `is_malicious: true`, the pipeline **aborts immediately**; the payload never reaches a downstream LLM that could act on it. Only a benign verdict allows processing to continue.
+
+```
+RFP document
+    └─► extract requirements
+            └─► Security Agent (Agent-Sec-01)
+                    ├── is_malicious: true  ──► ABORT — pipeline halted
+                    └── is_malicious: false ──► PASS  — downstream agent receives content
+```
+
+Raw content flows directly into the LLM, which applies a detailed security system prompt to reason about whether the payload is a prompt injection attack. The approach is analogous to a human security analyst reading a document and flagging suspicious content before it enters a sensitive system.
 
 The core trade-off: the LLM sees the raw attack payload, which means a sufficiently sophisticated injection could theoretically influence the classifier's own reasoning. This is mitigated by a carefully engineered system prompt that establishes a non-interactive observer role, but the risk is probabilistic rather than structural.
 
@@ -31,6 +41,10 @@ graph TD
         RESULT["{\n  is_malicious: bool\n  confidence_score: 0.0–1.0\n  attack_types: [...]\n  flagged_paths: [...]\n  severity: CRITICAL|HIGH|MEDIUM|LOW|NONE\n}"]
     end
 
+    GATE{"is_malicious?"}
+    ABORT["ABORT\nPipeline halted\nExit code 2 / HTTP 200 with is_malicious:true\nDownstream agent never invoked"]
+    PASS["PASS\nContent forwarded to\ndownstream LLM agent"]
+
     API["Flask API\nPOST /scan\nGET /health\nPort 5007"]
     REPORT["JSON Audit File\n(optional)"]
 
@@ -48,17 +62,23 @@ graph TD
     FULL --> MERGE
     OUTPUT --> API
     OUTPUT --> REPORT
+    OUTPUT --> GATE
+    GATE -->|"true"| ABORT
+    GATE -->|"false"| PASS
+
+    style ABORT fill:#ff4444,color:#fff
+    style PASS fill:#22aa44,color:#fff
 ```
 
 ---
 
 ## Data Flow
 
-### Standalone / Test Harness Mode
+### Standalone / CLI Mode (scripted pipelines)
 
 ```
-Dataset entry
-    └─► wrap prompt in {"user_input": <text>}
+RFP requirements JSON
+    └─► wrap each field in {"user_input": <text>}
             └─► Phase 1: per-node LLM call
             │       └─► LLM analyses node with security system prompt
             │               └─► JSON result: {is_malicious, confidence, …}
@@ -66,18 +86,29 @@ Dataset entry
                     └─► LLM scans all fields together for split payloads
                             └─► JSON result
                                     └─► Aggregate results
-                                            └─► Classification verdict
-                                                    └─► Metrics (TP/TN/FP/FN)
+                                            └─► is_malicious?
+                                                    ├── true  → exit code 2  (caller aborts pipeline)
+                                                    └── false → exit code 0  (caller continues)
 ```
 
 ### Server (A2A) Mode
 
 ```
-Agent-to-Agent POST /scan
-    └─► Load requirements JSON from disk
-            └─► Phase 1 + Phase 2 analysis (same as above)
-                    └─► Return audit report JSON
-                            └─► Upstream agent receives verdict
+Orchestrator agent → POST /scan {requirements_json: "/path/to/file.json"}
+    └─► Phase 1 + Phase 2 analysis (same as above)
+            └─► Return audit report JSON
+                    └─► Orchestrator reads is_malicious
+                            ├── true  → orchestrator aborts pipeline, raises alert
+                            └── false → orchestrator passes content to downstream agent
+```
+
+### Test Harness Mode
+
+```
+Dataset entry (label: malicious | benign)
+    └─► Same scan pipeline as above
+            └─► Compare detected verdict vs expected label
+                    └─► Record TP / TN / FP / FN for metrics
 ```
 
 ---
@@ -113,6 +144,17 @@ Payload splitting is a real attack class: an adversary fragments a malicious ins
 ### Markdown / Think-Block Stripping
 
 Some Ollama models (e.g. Qwen3) emit `<think>…</think>` reasoning blocks or wrap JSON in markdown fences. The parser strips both before attempting `json.loads()`, preventing parse failures on verbose models.
+
+### Fire Break / Abort Signal
+
+The pipeline abort is communicated in two ways depending on invocation mode:
+
+| Mode | Abort signal |
+|---|---|
+| **Standalone / CLI** | Exit code `2` — the calling shell script checks `$?` and halts |
+| **A2A / Flask** | HTTP 200 with `{"summary": {"is_malicious": true, ...}}` — the orchestrator agent reads this and halts |
+
+The security agent itself does not call or interact with downstream agents. It only returns a verdict. The responsibility for honouring the abort signal rests with the orchestrator or the calling shell script.
 
 ---
 
