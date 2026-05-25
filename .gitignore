@@ -10,3 +10,4 @@ build/
 venv/
 .env
 *.json.bak
+*_results_*.json

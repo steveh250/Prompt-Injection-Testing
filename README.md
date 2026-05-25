@@ -13,7 +13,6 @@ The research originated from the **RFP Responder** multi-agent solution, which e
 ```
 Prompt-Injection-Testing/
 ├── README.md                                          # This file
-├── DATASET.md                                         # Dataset documentation
 ├── security_agent-Prompt_INJECTION_And_Benign_DATASET.jsonl  # Shared test dataset
 ├── Ollama/                                            # LLM-based inline security agent
 │   ├── README.md
