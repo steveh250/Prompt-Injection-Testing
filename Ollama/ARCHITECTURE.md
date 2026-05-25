@@ -23,9 +23,9 @@ The core trade-off: the LLM sees the raw attack payload, which means a sufficien
 ```mermaid
 graph TD
     INPUT["External Input\n(RFP requirement / user prompt)"]
-    WRAP["JSON Wrapper\n{\"user_input\": prompt_text}"]
-    CLIENT["LLM Client\nOpenAI-compatible → Ollama\nhttp://localhost:11434/v1/"]
-    PROMPT["Security System Prompt\nAgent-Sec-01 — Prompt Security Sentinel\n• 7 threat detection vectors\n• Observer role (no execution)\n• JSON-only output protocol"]
+    WRAP["JSON Wrapper\nInput wrapped as: {user_input: prompt_text}"]
+    CLIENT["LLM Client\nOpenAI-compatible - Ollama\nhttp://localhost:11434/v1/"]
+    PROMPT["Security System Prompt\nAgent-Sec-01 - Prompt Security Sentinel\n7 threat detection vectors\nObserver role, JSON-only output"]
 
     subgraph PHASE1["Phase 1 — Per-Node Analysis"]
         NODE["Per-Node Scan\nEach JSON field analysed individually\nDetects: direct injection, roleplay,\nobfuscation, code execution"]
@@ -38,7 +38,7 @@ graph TD
     MERGE["Result Aggregation\nmax severity · union of attack types\ncollect flagged paths"]
 
     subgraph OUTPUT["Audit Report"]
-        RESULT["{\n  is_malicious: bool\n  confidence_score: 0.0–1.0\n  attack_types: [...]\n  flagged_paths: [...]\n  severity: CRITICAL|HIGH|MEDIUM|LOW|NONE\n}"]
+        RESULT["is_malicious: bool\nconfidence_score: 0.0-1.0\nattack_types: list\nflagged_paths: list\nseverity: CRITICAL/HIGH/MEDIUM/LOW/NONE"]
     end
 
     GATE{"is_malicious?"}
