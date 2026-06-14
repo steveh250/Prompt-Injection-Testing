@@ -73,18 +73,80 @@ To ensure accurate analysis, you MUST output your JSON keys in the exact order s
 _INVALID_JSON_ESCAPE = re.compile(r'\\(?!["\\/bfnrtu])')
 
 
+def _default_result(note: str) -> dict:
+    """Canonical fallback verdict used when analysis fails or is incomplete."""
+    return {
+        "internal_analysis_scratchpad": note,
+        "is_malicious": False,
+        "confidence_score": 0.0,
+        "attack_types": [],
+        "flagged_paths": [],
+        "severity": "NONE",
+    }
+
+
+def _recover_partial_json(text: str):
+    """
+    Best-effort recovery of a truncated/degenerate JSON object.
+
+    Walks the leading "key": value pairs one at a time using a JSON decoder,
+    stopping at the first incomplete or malformed pair. This salvages the
+    verdict fields a model emits before it degenerates (e.g. the Gemma4
+    repetition-collapse bug, where valid scalars precede a runaway string).
+
+    Returns the recovered dict, or None if nothing usable was parsed.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    decoder = json.JSONDecoder()
+    result = {}
+    i = start + 1
+    n = len(text)
+
+    while i < n:
+        # Skip whitespace and separators between pairs
+        while i < n and text[i] in " \t\r\n,":
+            i += 1
+        if i >= n or text[i] == "}":
+            break
+        if text[i] != '"':  # expected a string key
+            break
+        try:
+            key, i = decoder.raw_decode(text, i)
+        except json.JSONDecodeError:
+            break
+        while i < n and text[i] in " \t\r\n":
+            i += 1
+        if i >= n or text[i] != ":":
+            break
+        i += 1
+        while i < n and text[i] in " \t\r\n":
+            i += 1
+        try:
+            value, i = decoder.raw_decode(text, i)
+        except json.JSONDecodeError:
+            break  # value is truncated/garbage — stop, keep what we have
+        result[key] = value
+
+    return result or None
+
+
 def _parse_llm_json(result_text: str) -> dict:
     """
     Robustly parse a JSON object out of raw LLM output.
 
-    Handles three common failure modes seen with local/Ollama models:
+    Handles failure modes seen with local/Ollama models:
       1. <think> reasoning blocks wrapping the answer.
       2. Markdown code fences and surrounding prose.
       3. Invalid backslash escapes inside string values (the most common
          cause of "Invalid \escape" errors), e.g. when the model echoes
          regex, file paths, or delimiters like \""" into its scratchpad.
+      4. Truncated / degenerate output (e.g. the Gemma4 repetition-collapse
+         bug) — the leading verdict fields are recovered from the partial JSON.
 
-    Raises json.JSONDecodeError if the text cannot be parsed even after repair.
+    Raises json.JSONDecodeError if no usable verdict can be recovered.
     """
     text = result_text.strip()
 
@@ -103,12 +165,27 @@ def _parse_llm_json(result_text: str) -> dict:
     if start != -1 and end != -1 and end > start:
         text = text[start:end + 1]
 
+    # Repair invalid backslash escapes; used for both the retry and recovery
+    repaired = _INVALID_JSON_ESCAPE.sub(r"\\\\", text)
+
     try:
         return json.loads(text)
-    except json.JSONDecodeError:
-        # Repair invalid backslash escapes and retry once before giving up
-        repaired = _INVALID_JSON_ESCAPE.sub(r"\\\\", text)
-        return json.loads(repaired)
+    except json.JSONDecodeError as strict_error:
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            pass
+
+        # Last resort: recover the leading verdict fields from partial output
+        recovered = _recover_partial_json(repaired)
+        if recovered is not None and "is_malicious" in recovered:
+            logger.warning(
+                "Recovered partial verdict from malformed LLM response "
+                f"(keys: {list(recovered)})"
+            )
+            return {**_default_result("Recovered from malformed LLM response."), **recovered}
+
+        raise strict_error
 
 
 def _get_llm_client():
@@ -138,6 +215,10 @@ JSON DATA TO ANALYZE:
 {json_payload}"""
 
     try:
+        # NOTE: response_format={"type": "json_object"} is intentionally NOT used.
+        # Combined with a free-text field (internal_analysis_scratchpad), JSON-mode
+        # triggers a Gemma4 repetition-collapse bug (ollama/ollama#15502). We rely
+        # on the prompt's OUTPUT PROTOCOL plus _parse_llm_json's robust recovery.
         response = client.chat.completions.create(
             model=OLLAMA_MODEL_ID,
             messages=[
@@ -145,7 +226,6 @@ JSON DATA TO ANALYZE:
                 {"role": "user", "content": user_message},
             ],
             temperature=0.1,  # Low temperature for consistent security analysis
-            response_format={"type": "json_object"},  # Constrain output to valid JSON
             max_tokens=MAX_OUTPUT_TOKENS,  # Avoid truncated, unparseable JSON
         )
 
@@ -156,24 +236,10 @@ JSON DATA TO ANALYZE:
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse LLM security response as JSON: {e}")
         logger.error(f"Raw response was: {result_text!r}")
-        return {
-            "internal_analysis_scratchpad": f"LLM response could not be parsed as JSON: {str(e)}",
-            "is_malicious": False,
-            "confidence_score": 0.0,
-            "attack_types": [],
-            "flagged_paths": [],
-            "severity": "NONE",
-        }
+        return _default_result(f"LLM response could not be parsed as JSON: {str(e)}")
     except Exception as e:
         logger.error(f"Error during LLM security analysis: {e}")
-        return {
-            "internal_analysis_scratchpad": f"Analysis error: {str(e)}",
-            "is_malicious": False,
-            "confidence_score": 0.0,
-            "attack_types": [],
-            "flagged_paths": [],
-            "severity": "NONE",
-        }
+        return _default_result(f"Analysis error: {str(e)}")
 
 
 def _iter_json_nodes(data, path=""):
