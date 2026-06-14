@@ -140,6 +140,7 @@ JSON DATA TO ANALYZE:
                 {"role": "user", "content": user_message},
             ],
             temperature=0.1,  # Low temperature for consistent security analysis
+            response_format={"type": "json_object"},  # Constrain output to valid JSON
         )
 
         result_text = response.choices[0].message.content.strip()
