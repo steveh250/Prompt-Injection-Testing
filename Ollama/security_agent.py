@@ -5,6 +5,7 @@
 # jailbreaks, and malicious context manipulations.
 
 import json
+import re
 import sys
 import os
 import logging
@@ -60,6 +61,51 @@ To ensure accurate analysis, you MUST output your JSON keys in the exact order s
   "severity": string // "CRITICAL", "HIGH", "MEDIUM", "LOW", or "NONE".
 }"""
 
+# Matches a backslash that is NOT the start of a valid JSON escape sequence
+# (valid escapes: \" \\ \/ \b \f \n \r \t \uXXXX). Used to repair LLM output
+# that embeds literal backslashes (regex, Windows paths, \d, \"""," etc.) inside
+# string values, which would otherwise raise json.JSONDecodeError("Invalid \escape").
+_INVALID_JSON_ESCAPE = re.compile(r'\\(?!["\\/bfnrtu])')
+
+
+def _parse_llm_json(result_text: str) -> dict:
+    """
+    Robustly parse a JSON object out of raw LLM output.
+
+    Handles three common failure modes seen with local/Ollama models:
+      1. <think> reasoning blocks wrapping the answer.
+      2. Markdown code fences and surrounding prose.
+      3. Invalid backslash escapes inside string values (the most common
+         cause of "Invalid \escape" errors), e.g. when the model echoes
+         regex, file paths, or delimiters like \""" into its scratchpad.
+
+    Raises json.JSONDecodeError if the text cannot be parsed even after repair.
+    """
+    text = result_text.strip()
+
+    # Strip <think> blocks if present (Qwen3 / reasoning models)
+    if "<think>" in text:
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+    # Strip markdown code fences if present
+    if text.startswith("```"):
+        lines = [l for l in text.split("\n") if not l.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+
+    # Isolate the JSON object in case the model added prose before/after it
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end + 1]
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Repair invalid backslash escapes and retry once before giving up
+        repaired = _INVALID_JSON_ESCAPE.sub(r"\\\\", text)
+        return json.loads(repaired)
+
+
 def _get_llm_client():
     """Create an OpenAI-compatible client for the configured LLM."""
     return OpenAI(
@@ -94,27 +140,16 @@ JSON DATA TO ANALYZE:
                 {"role": "user", "content": user_message},
             ],
             temperature=0.1,  # Low temperature for consistent security analysis
+            response_format={"type": "json_object"},  # Constrain output to valid JSON
         )
 
         result_text = response.choices[0].message.content.strip()
 
-        # Strip <think> blocks if present (Qwen3 reasoning)
-        if "<think>" in result_text:
-            import re
-            result_text = re.sub(r"<think>.*?</think>", "", result_text, flags=re.DOTALL).strip()
-
-        # Strip markdown code fences if present
-        if result_text.startswith("```"):
-            lines = result_text.split("\n")
-            # Remove first line (```json) and last line (```)
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            result_text = "\n".join(lines).strip()
-
-        return json.loads(result_text)
+        return _parse_llm_json(result_text)
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse LLM security response as JSON: {e}")
-        logger.debug(f"Raw response: {result_text}")
+        logger.error(f"Raw response was: {result_text!r}")
         return {
             "internal_analysis_scratchpad": f"LLM response could not be parsed as JSON: {str(e)}",
             "is_malicious": False,
