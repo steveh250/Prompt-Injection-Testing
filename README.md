@@ -130,7 +130,7 @@ python test_fides_agent.py --limit 20           # quick test
 python test_fides_agent.py                      # full 500-prompt run
 ```
 
-Both scripts accept `--limit N`, `--start N`, and `--output path/to/results.json`.
+Both scripts accept `--limit N`, `--start N`, and `--output path/to/results.json`. The Ollama harness additionally accepts `--force-json` to request JSON mode on the LLM calls (off by default — see [`Ollama/README.md`](Ollama/README.md#output-parsing)).
 
 ---
 
