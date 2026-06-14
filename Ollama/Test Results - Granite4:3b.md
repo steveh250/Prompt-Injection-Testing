@@ -1,5 +1,6 @@
 # Summary Test Results - Granite4
 
+```
 ======================================================================
   SECURITY AGENT TEST RESULTS SUMMARY
 ======================================================================
@@ -43,3 +44,4 @@
 ======================================================================
 
 INFO:__main__:Detailed results saved to: /home/ubuntu/MAF/SecurityAgent/security_test_results_20260614_181725.json
+```
