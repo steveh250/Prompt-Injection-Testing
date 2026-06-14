@@ -196,7 +196,8 @@ def _get_llm_client():
     )
 
 
-def _analyze_with_llm(client, json_payload: str, context: str = "") -> dict:
+def _analyze_with_llm(client, json_payload: str, context: str = "",
+                      force_json: bool = False) -> dict:
     """
     Send a JSON payload to the LLM for security analysis.
 
@@ -204,6 +205,8 @@ def _analyze_with_llm(client, json_payload: str, context: str = "") -> dict:
         client: OpenAI client instance
         json_payload: The JSON string to analyze
         context: Additional context about what is being analyzed
+        force_json: When True, request response_format={"type": "json_object"}.
+            Off by default (see NOTE below).
 
     Returns:
         Parsed security analysis result dict
@@ -215,19 +218,25 @@ JSON DATA TO ANALYZE:
 {json_payload}"""
 
     try:
-        # NOTE: response_format={"type": "json_object"} is intentionally NOT used.
-        # Combined with a free-text field (internal_analysis_scratchpad), JSON-mode
-        # triggers a Gemma4 repetition-collapse bug (ollama/ollama#15502). We rely
-        # on the prompt's OUTPUT PROTOCOL plus _parse_llm_json's robust recovery.
-        response = client.chat.completions.create(
-            model=OLLAMA_MODEL_ID,
-            messages=[
+        # NOTE: JSON mode (response_format={"type": "json_object"}) is OFF by
+        # default. Combined with a free-text field (internal_analysis_scratchpad)
+        # it triggers a Gemma4 repetition-collapse bug (ollama/ollama#15502);
+        # we instead rely on the prompt's OUTPUT PROTOCOL plus _parse_llm_json's
+        # robust recovery. It can be opted back in per run via --force-json
+        # (force_json=True) for models that don't have that bug.
+        create_kwargs = {
+            "model": OLLAMA_MODEL_ID,
+            "messages": [
                 {"role": "system", "content": SECURITY_SYSTEM_PROMPT},
                 {"role": "user", "content": user_message},
             ],
-            temperature=0.1,  # Low temperature for consistent security analysis
-            max_tokens=MAX_OUTPUT_TOKENS,  # Avoid truncated, unparseable JSON
-        )
+            "temperature": 0.1,  # Low temperature for consistent security analysis
+            "max_tokens": MAX_OUTPUT_TOKENS,  # Avoid truncated, unparseable JSON
+        }
+        if force_json:
+            create_kwargs["response_format"] = {"type": "json_object"}
+
+        response = client.chat.completions.create(**create_kwargs)
 
         result_text = response.choices[0].message.content.strip()
 
@@ -273,7 +282,8 @@ def _iter_json_nodes(data, path=""):
                 yield current_path, item
 
 
-def scan_requirements_json(requirements_json_path: str, output_file: str = None) -> dict:
+def scan_requirements_json(requirements_json_path: str, output_file: str = None,
+                           force_json: bool = False) -> dict:
     """
     Perform security analysis on extracted RFP requirements JSON.
 
@@ -283,6 +293,7 @@ def scan_requirements_json(requirements_json_path: str, output_file: str = None)
     Args:
         requirements_json_path: Path to the requirements JSON file
         output_file: Path to save the security audit report
+        force_json: When True, force JSON mode on the LLM calls (default off)
 
     Returns:
         Security audit report dict
@@ -326,7 +337,7 @@ def scan_requirements_json(requirements_json_path: str, output_file: str = None)
         node_json = json.dumps({path: node_data}, indent=2)
         context = f"This is node {i+1} of {total_nodes} from an RFP requirements JSON. JSON path: {path}"
 
-        result = _analyze_with_llm(client, node_json, context)
+        result = _analyze_with_llm(client, node_json, context, force_json=force_json)
         result["node_path"] = path
 
         node_results.append(result)
@@ -365,7 +376,7 @@ def scan_requirements_json(requirements_json_path: str, output_file: str = None)
                    "payload when concatenated.")
         full_json_for_analysis = full_json
 
-    full_structure_result = _analyze_with_llm(client, full_json_for_analysis, context)
+    full_structure_result = _analyze_with_llm(client, full_json_for_analysis, context, force_json=force_json)
     full_structure_result["node_path"] = "FULL_STRUCTURE"
 
     if full_structure_result.get("is_malicious", False):
@@ -461,7 +472,8 @@ def scan():
     Expected JSON payload:
     {
         "requirements_json": "/path/to/requirements.json",
-        "output_file": "/path/to/security_audit.json"  // optional
+        "output_file": "/path/to/security_audit.json",  // optional
+        "force_json": false  // optional; force JSON mode on LLM calls (default false)
     }
 
     Returns:
@@ -490,6 +502,7 @@ def scan():
 
         requirements_json = data['requirements_json']
         output_file = data.get('output_file', None)
+        force_json = bool(data.get('force_json', False))
 
         # Verify file exists
         if not os.path.exists(requirements_json):
@@ -499,7 +512,7 @@ def scan():
             }), 404
 
         # Run security scan
-        result = scan_requirements_json(requirements_json, output_file)
+        result = scan_requirements_json(requirements_json, output_file, force_json=force_json)
 
         status_code = 200 if result.get("status") == "success" else 500
         return jsonify(result), status_code
@@ -514,16 +527,21 @@ def scan():
 
 def main():
     """Main entry point for running the security agent"""
-    if len(sys.argv) >= 2:
+    # --force-json may appear anywhere; strip it from the positional args
+    args = sys.argv[1:]
+    force_json = "--force-json" in args
+    positional = [a for a in args if a != "--force-json"]
+
+    if positional:
         # Standalone mode: scan from command line arguments
-        requirements_json = sys.argv[1]
-        output_file = sys.argv[2] if len(sys.argv) >= 3 else None
+        requirements_json = positional[0]
+        output_file = positional[1] if len(positional) >= 2 else None
 
         if not os.path.exists(requirements_json):
             print(f"Error: File not found: {requirements_json}")
             sys.exit(1)
 
-        result = scan_requirements_json(requirements_json, output_file)
+        result = scan_requirements_json(requirements_json, output_file, force_json=force_json)
 
         if result.get("summary", {}).get("is_malicious"):
             print(f"\nSECURITY ALERT: Malicious content detected!")
@@ -538,12 +556,13 @@ def main():
         print(f"Starting Security Agent (Agent-Sec-01) on port {SECURITY_AGENT_PORT}")
         print(f"{'='*60}\n")
         print("Usage (standalone mode):")
-        print(f"  python security_agent.py <requirements_json> [output_file]")
+        print(f"  python security_agent.py <requirements_json> [output_file] [--force-json]")
         print("\nUsage (server mode):")
         print(f"  POST http://localhost:{SECURITY_AGENT_PORT}/scan")
         print("  Body: {")
         print('    "requirements_json": "/path/to/requirements.json",')
-        print('    "output_file": "/path/to/security_audit.json"  // optional')
+        print('    "output_file": "/path/to/security_audit.json",  // optional')
+        print('    "force_json": false  // optional, force JSON mode on LLM calls')
         print("  }")
         print()
         app.run(host='0.0.0.0', port=SECURITY_AGENT_PORT, debug=False)

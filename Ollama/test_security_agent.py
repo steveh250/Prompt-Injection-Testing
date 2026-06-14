@@ -43,7 +43,7 @@ def load_dataset(dataset_path: str) -> list[dict]:
     return entries
 
 
-def test_prompt(client, entry: dict) -> dict:
+def test_prompt(client, entry: dict, force_json: bool = False) -> dict:
     """
     Test a single prompt against the security agent.
 
@@ -66,7 +66,7 @@ def test_prompt(client, entry: dict) -> dict:
     analysis_context = "This is a single input field from an RFP requirements document."
 
     try:
-        result = _analyze_with_llm(client, json_payload, analysis_context)
+        result = _analyze_with_llm(client, json_payload, analysis_context, force_json=force_json)
         detected_malicious = result.get("is_malicious", False)
         confidence = result.get("confidence_score", 0.0)
         severity = result.get("severity", "NONE")
@@ -228,6 +228,11 @@ def main():
         default=0,
         help="Start from this entry index (0-based)",
     )
+    parser.add_argument(
+        "--force-json",
+        action="store_true",
+        help="Force response_format=json_object on LLM calls (default: off)",
+    )
     args = parser.parse_args()
 
     # Load dataset
@@ -258,7 +263,7 @@ def main():
 
         logger.info(f"[{i+1}/{len(entries)}] {prompt_id} ({label}/{attack_type}): {prompt_preview}")
 
-        result = test_prompt(client, entry)
+        result = test_prompt(client, entry, force_json=args.force_json)
         results.append(result)
 
         status = "CORRECT" if result["correct"] else "WRONG"
