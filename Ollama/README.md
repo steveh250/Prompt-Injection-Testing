@@ -55,6 +55,9 @@ python test_security_agent.py --start 100 --limit 50
 
 # Save detailed per-prompt results to a JSON file
 python test_security_agent.py --output results.json
+
+# Force JSON mode on the LLM calls (off by default — see "Output Parsing" below)
+python test_security_agent.py --force-json --limit 20
 ```
 
 **CLI options:**
@@ -65,6 +68,7 @@ python test_security_agent.py --output results.json
 | `--output` | auto-named JSON | Path to save the detailed results report |
 | `--limit` | 0 (all) | Maximum number of prompts to test |
 | `--start` | 0 | Entry index to start from (0-based) |
+| `--force-json` | off | Request `response_format={"type":"json_object"}` on LLM calls. Off by default to avoid a Gemma4 repetition bug; see [Output Parsing](#output-parsing). |
 
 ---
 
@@ -82,14 +86,20 @@ curl http://localhost:5007/health
 curl -X POST http://localhost:5007/scan \
   -H "Content-Type: application/json" \
   -d '{"requirements_json": "/path/to/requirements.json"}'
+
+# Optionally force JSON mode on the LLM calls (default false)
+curl -X POST http://localhost:5007/scan \
+  -H "Content-Type: application/json" \
+  -d '{"requirements_json": "/path/to/requirements.json", "force_json": true}'
 ```
 
 **Standalone mode** (no server):
 
 ```bash
-python security_agent.py /path/to/requirements.json [output_audit.json]
+python security_agent.py /path/to/requirements.json [output_audit.json] [--force-json]
 # Exit code 0 = clean, pipeline may continue
 # Exit code 2 = malicious content detected, pipeline should abort
+# --force-json   request JSON mode on LLM calls (off by default)
 ```
 
 In a scripted pipeline, the caller checks the exit code to decide whether to proceed:
@@ -147,3 +157,33 @@ Each analysis call returns:
   "severity": "CRITICAL"
 }
 ```
+
+## Output Parsing
+
+Local models do not always return clean JSON, and a parse failure must not be
+silently treated as "benign" (a false negative). `_parse_llm_json()` is
+defensive in layers:
+
+1. Strips `<think>…</think>` reasoning blocks and markdown code fences.
+2. Isolates the `{…}` object from any surrounding prose.
+3. Repairs invalid backslash escapes (e.g. regex `\d`, Windows paths, `\"""`
+   delimiters echoed into the scratchpad) that would otherwise raise
+   `Invalid \escape`, then retries.
+4. **Partial recovery:** if the JSON is still unparseable (e.g. the model
+   truncated or degenerated into a repetition loop), it recovers the leading
+   `"key": value` pairs that were emitted before the corruption — salvaging the
+   verdict instead of discarding the whole response.
+
+Generation is also capped at `MAX_OUTPUT_TOKENS` (2048) so a long reasoning
+trace cannot truncate the verdict.
+
+### JSON mode is off by default
+
+`response_format={"type":"json_object"}` is **not** sent by default. Combined
+with the free-text `internal_analysis_scratchpad` field, JSON mode triggers a
+known Gemma4 repetition-collapse bug
+([ollama/ollama#15502](https://github.com/ollama/ollama/issues/15502)) that
+produces unterminated JSON. The system prompt already mandates JSON-only output,
+and the layered parser above handles the unconstrained case. For models without
+that bug, re-enable JSON mode per run with `--force-json` (CLI / test harness) or
+`"force_json": true` (Flask `/scan` body).

@@ -131,7 +131,7 @@ The system prompt establishes **Agent-Sec-01** as a read-only observer. It expli
 
 ### Internal Reasoning Scratchpad
 
-The prompt mandates an `internal_analysis_scratchpad` as the first JSON key. This forces the model to reason step-by-step before returning a verdict — improving accuracy on subtle attacks and making results auditable.
+The prompt mandates an `internal_analysis_scratchpad` as the first JSON key. This forces the model to reason step-by-step before returning a verdict — improving accuracy on subtle attacks and making results auditable. The prompt instructs the model to keep this reasoning **concise** and to stop before emitting the verdict fields, so a runaway reasoning trace cannot consume the whole output budget and truncate the verdict. As a further safeguard, generation is capped at `MAX_OUTPUT_TOKENS` (2048).
 
 ### Low Temperature (0.1)
 
@@ -141,9 +141,18 @@ Security classification must be deterministic and consistent. A temperature of 0
 
 Payload splitting is a real attack class: an adversary fragments a malicious instruction across multiple JSON fields, each of which appears benign in isolation. Phase 1 catches single-field attacks; Phase 2 catches distributed ones by presenting the full structure to the LLM.
 
-### Markdown / Think-Block Stripping
+### Robust JSON Parsing & Recovery
 
-Some Ollama models (e.g. Qwen3) emit `<think>…</think>` reasoning blocks or wrap JSON in markdown fences. The parser strips both before attempting `json.loads()`, preventing parse failures on verbose models.
+Local models frequently return JSON that `json.loads()` rejects, and a parse failure must never be silently scored as benign (a false negative). `_parse_llm_json()` applies defensive layers, in order:
+
+1. **Strip wrappers** — `<think>…</think>` reasoning blocks (e.g. Qwen3) and markdown code fences.
+2. **Isolate the object** — slice from the first `{` to the last `}`, discarding any surrounding prose.
+3. **Repair invalid escapes** — backslash sequences that are not valid JSON escapes (e.g. regex `\d`, Windows paths, `\"""` delimiters echoed into the scratchpad) raise `Invalid \escape`; the parser escapes them and retries.
+4. **Partial recovery** — if the text is still unparseable (truncation, or a model degenerating into a repetition loop), `_recover_partial_json()` walks the leading `"key": value` pairs and stops at the first incomplete/malformed pair, returning the verdict fields emitted before the corruption merged over `_default_result()`. This salvages the decision instead of discarding the whole response.
+
+### JSON Mode Off by Default (Gemma4 Bug)
+
+`response_format={"type":"json_object"}` is **not** requested by default. When combined with a free-text string field (`internal_analysis_scratchpad`), JSON-mode triggers a documented Gemma4 repetition-collapse bug ([ollama/ollama#15502](https://github.com/ollama/ollama/issues/15502), [google-deepmind/gemma#622](https://github.com/google-deepmind/gemma/issues/622)) that fills the token budget with repeated tokens and yields unterminated JSON. `repeat_penalty` and temperature/top_p tuning are reported ineffective; the fix is structural — don't constrain the format. The system prompt's OUTPUT PROTOCOL plus the layered parser above cover the unconstrained case. For models that lack the bug and benefit from guaranteed-valid JSON, the constraint is opt-in per run via `--force-json` (CLI / test harness) or `"force_json": true` in the Flask `/scan` body; the default is OFF.
 
 ### Fire Break / Abort Signal
 
@@ -178,4 +187,6 @@ For a structural, deterministic alternative, see the [FIDES approach](../MAF-FID
 | `OLLAMA_MODEL_ID` | `prompt-classifier:latest` | Ollama model name |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1/` | Ollama API endpoint |
 | `SECURITY_AGENT_PORT` | `5007` | Flask server port |
+| `MAX_OUTPUT_TOKENS` | `2048` | `max_tokens` cap so the JSON verdict cannot be truncated |
 | `temperature` | `0.1` | LLM sampling temperature |
+| JSON mode (`force_json`) | off | Opt-in `response_format={"type":"json_object"}` via `--force-json` / `"force_json": true` (off by default; see [JSON Mode Off by Default](#json-mode-off-by-default-gemma4-bug)) |
