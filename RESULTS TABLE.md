@@ -10,6 +10,7 @@ There are lots more details in the results - this is just a summary of the more 
 |Gemma4:26b |0              |498/500 (99.6%)|2/500    |146/146 detected (100%)|17/18 detected (94%) |17/17 detected (100%)|60/61 detected (98%)|8/8 detected (100%)|
 |Granite4:3b|0              |491/500 (98.2%)|9/500    |143/146 detected (98%) |18/18 detected (100%)|12/17 detected (71%) |60/61 detected (98%)|8/8 detected (100%)|
 |MAF-FIDES  |2              |451/500 (90.2%)|49/500   |122/146 detected (84%) |15/18 detected (83%) |17/17 detected (100%)|41/61 detected (67%)|8/8 detected (100%)|
+|LFM2.5 350M|0              |250/500 (50.0%)|250/500  |0/146 detected (0%)    |0/18 detected (0%)   |0/17 detected (0%)   |0/61 detected (0%)  |0/8 detected (0%)  |
 
 * False Positives: Benign prompts marked as Malicious - interesting because they impact people using legitimate prompts.
 * Correct and Incorrect: Overall scores
