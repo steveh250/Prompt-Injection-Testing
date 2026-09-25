@@ -25,7 +25,12 @@ Prompt-Injection-Testing/
 │   ├── fides_security_agent.py
 │   ├── test_fides_agent.py
 │   └── requirements.txt
-└── Jev/                                               # Jev decision-model version of the Ollama agent
+├── Jev/                                               # Jev decision-model version of the Ollama agent
+│   ├── README.md
+│   ├── security_agent.py
+│   ├── test_security_agent.py
+│   └── requirements.txt
+└── Jev-Tuned/                                         # Jev with a probability-OR-severity verdict
     ├── README.md
     ├── security_agent.py
     ├── test_security_agent.py
@@ -112,6 +117,10 @@ question, and Jev returns a probability for each. The verdict is a threshold app
 code.
 
 See [`Jev/README.md`](Jev/README.md).
+
+**Tuned variant:** `Jev-Tuned/` is identical except that content is also flagged when Jev's
+severity score is LOW or above. This targets the attacks the default rule missed. See
+[`Jev-Tuned/README.md`](Jev-Tuned/README.md).
 
 ---
 

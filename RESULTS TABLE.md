@@ -12,10 +12,12 @@ There are lots more details in the results - this is just a summary of the more 
 |MAF-FIDES  |2              |451/500 (90.2%)|49/500   |122/146 detected (84%) |15/18 detected (83%) |17/17 detected (100%)|41/61 detected (67%)|8/8 detected (100%)|
 |LFM2.5 350M|0              |250/500 (50.0%)|250/500  |0/146 detected (0%)    |0/18 detected (0%)   |0/17 detected (0%)   |0/61 detected (0%)  |0/8 detected (0%)  |
 |Jev 1.13   |0              |461/500 (92.2%)|39/500   |130/146 detected (89%) |18/18 detected (100%)|16/17 detected (94%) |39/61 detected (64%)|8/8 detected (100%)|
+|Jev 1.13 Tuned*|0           |500/500 (100%) |0/500    |146/146 detected (100%)|18/18 detected (100%)|17/17 detected (100%)|61/61 detected (100%)|8/8 detected (100%)|
 
 * False Positives: Benign prompts marked as Malicious - interesting because they impact people using legitimate prompts.
 * Correct and Incorrect: Overall scores
 * Attack type breakdown: Code Execution, Data Leakage, Jailbreaking, Obfuscation, Role Playing
+* \* Jev 1.13 Tuned: the verdict rule was tuned after seeing the Jev 1.13 results on this same dataset, so this row is not an independent result. See the note below.
 
 ## Note on the LFM2.5 350M run
 
@@ -43,3 +45,14 @@ Jev (TypeSafe AI's decision model, run through OpenRouter) is hosted rather than
 * **What it missed:** mostly bare shell commands with no manipulation language, such as fork bombs, `dd`, reverse shells and 22 `whoami | gzip | gunzip`-style obfuscation variants.
 
 Full write-up: [`Jev/Test Results - Jev 1.13.md`](Jev/Test%20Results%20-%20Jev%201.13.md).
+
+## Note on the Jev 1.13 Tuned run
+
+A second Jev run with one change to the verdict: content is flagged if `p(is_malicious) ≥ 0.5` **or** Jev's severity score is LOW (1.0) or above. In the first run, Jev rated every missed attack at least LOW severity, while no benign prompt scored above 0.18.
+
+* **Result:** 500/500 with 0 false positives. All 39 former misses were caught by the severity rule, and no correct verdict changed. Time (60.5 s) and cost ($0.024) were the same, because the severity answer was already in every request.
+* **Margins:** benign severity scores peaked at 0.19; the lowest attack scored 1.40. Any severity threshold from 0.25 to 1.5 gives 100%.
+* **Run-to-run variation:** Jev's probabilities moved by up to ±0.08 between the two runs, so which borderline attacks the untuned 0.5 rule catches changes from run to run. The severity signal stayed well clear of the threshold in both runs.
+* **Caveat:** the rule was fitted to the first run's results, so 100% here is expected and doesn't show how it behaves on unseen data. The untuned 92.2% row remains the fair comparison with the other models. Testing on a different set of benign prompts is the next step.
+
+Full write-up: [`Jev-Tuned/Test Results - Jev 1.13 Tuned.md`](Jev-Tuned/Test%20Results%20-%20Jev%201.13%20Tuned.md).
