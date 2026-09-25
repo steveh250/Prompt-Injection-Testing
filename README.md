@@ -19,11 +19,16 @@ Prompt-Injection-Testing/
 │   ├── ARCHITECTURE.md
 │   ├── security_agent.py
 │   └── test_security_agent.py
-└── MAF-FIDES/                                         # FIDES content-labelling approach
+├── MAF-FIDES/                                         # FIDES content-labelling approach
+│   ├── README.md
+│   ├── ARCHITECTURE.md
+│   ├── fides_security_agent.py
+│   ├── test_fides_agent.py
+│   └── requirements.txt
+└── Jev/                                               # Jev decision-model version of the Ollama agent
     ├── README.md
-    ├── ARCHITECTURE.md
-    ├── fides_security_agent.py
-    ├── test_fides_agent.py
+    ├── security_agent.py
+    ├── test_security_agent.py
     └── requirements.txt
 ```
 
@@ -96,6 +101,20 @@ See [`MAF-FIDES/README.md`](MAF-FIDES/README.md) and [`MAF-FIDES/ARCHITECTURE.md
 
 ---
 
+### 3. Jev — Decision Model Fire Break
+
+**Folder:** `Jev/`
+
+The same inline fire break as the Ollama approach, with the same agent, harness and report
+format, but the model is **Jev** (`typesafe/jev-1.13`) via OpenRouter's Decisions API. Jev
+returns no text. Each threat vector from the Ollama system prompt is asked as a typed
+question, and Jev returns a probability for each. The verdict is a threshold applied in
+code.
+
+See [`Jev/README.md`](Jev/README.md).
+
+---
+
 ## Key Distinction Between Approaches
 
 | Dimension | Ollama Approach | FIDES Approach |
@@ -128,6 +147,12 @@ cd MAF-FIDES
 pip install -r requirements.txt
 python test_fides_agent.py --limit 20           # quick test
 python test_fides_agent.py                      # full 500-prompt run
+
+# Jev approach (needs OPENROUTER_API_KEY)
+cd Jev
+pip install -r requirements.txt
+python test_security_agent.py --limit 20        # quick test
+python test_security_agent.py                   # full 500-prompt run
 ```
 
 Both scripts accept `--limit N`, `--start N`, and `--output path/to/results.json`. The Ollama harness additionally accepts `--force-json` to request JSON mode on the LLM calls (off by default — see [`Ollama/README.md`](Ollama/README.md#output-parsing)).
