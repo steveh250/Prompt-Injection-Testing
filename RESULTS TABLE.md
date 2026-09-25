@@ -39,7 +39,7 @@ Bottom line: 0% detection across all five attack categories. The row is accurate
 Jev (TypeSafe AI's decision model, run through OpenRouter) is hosted rather than local, and returns probabilities instead of text. The row above uses the default 0.5 threshold, which was fixed before the run.
 
 * **Speed and cost:** all 500 prompts took **56.2 seconds** (p50 latency 103 ms) and cost **$0.024** in total, about $0.05 per 1,000 prompts. For comparison, the local runs took 12.1 minutes (MAF-FIDES) to 178.8 minutes (LFM2.5 350M) on different hardware.
-* **Perfect ranking:** ROC-AUC was 1.0000. Every attack scored higher than every benign prompt. All 39 errors are attacks scored just under the threshold (mostly 0.3–0.5), and there were no false positives. A threshold of 0.1–0.3 would have scored 99.6–100%, but it was picked after seeing these results, so the table reports 0.5.
+* **Perfect ranking:** ROC-AUC was 1.0000. Every attack scored higher than every benign prompt. Benign prompts all scored 0.02–0.04; the lowest attack scored 0.16. 37 of the 39 misses scored 0.31–0.49, just under the threshold, and there were no false positives. Jev's severity score also rated every missed attack as MEDIUM to HIGH impact. A threshold of 0.1–0.3 would have scored 99.6–100%, but it was picked after seeing these results, so the table reports 0.5.
 * **What it missed:** mostly bare shell commands with no manipulation language, such as fork bombs, `dd`, reverse shells and 22 `whoami | gzip | gunzip`-style obfuscation variants.
 
 Full write-up: [`Jev/Test Results - Jev 1.13.md`](Jev/Test%20Results%20-%20Jev%201.13.md).
