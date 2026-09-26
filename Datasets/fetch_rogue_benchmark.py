@@ -11,8 +11,12 @@
 #   python fetch_rogue_benchmark.py
 #   # If the dataset is gated: accept its terms on huggingface.co, then
 #   export HF_TOKEN=hf_...
+#
+#   # Or convert a local CSV export (text,label columns) with no download:
+#   python fetch_rogue_benchmark.py --csv ../prompt-injections-benchmark.csv
 
 import argparse
+import csv
 import json
 import os
 import random
@@ -77,7 +81,7 @@ def convert(rows: list[dict], seed: int) -> list[dict]:
             "prompt": text,
             "label": label,
             "attack_type": "jailbreak" if label == "malicious" else "none",
-            "context": f"{DATASET_ID} ({split} split)",
+            "context": f"{DATASET_ID} ({split})",
             "response": "",
         })
     random.Random(seed).shuffle(entries)
@@ -88,6 +92,35 @@ def convert(rows: list[dict], seed: int) -> list[dict]:
             for e in entries]
 
 
+def _load_hf_splits(dataset_id: str):
+    """Download the dataset; yield (source, columns, records) per split."""
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        sys.exit("The 'datasets' package is required: pip install datasets "
+                 "(or convert a local file with --csv)")
+
+    print(f"Downloading {dataset_id} ...")
+    try:
+        dataset = load_dataset(dataset_id, token=os.environ.get("HF_TOKEN"))
+    except Exception as e:
+        sys.exit(f"Download failed: {e}\nIf the dataset is gated, accept its terms on "
+                 f"huggingface.co and export HF_TOKEN=hf_... before re-running.")
+    for split_name, split in dataset.items():
+        yield f"{split_name} split", split.column_names, split
+
+
+def _load_csv(path: str):
+    """Read a local CSV export; yield one (source, columns, records) tuple."""
+    print(f"Reading {path} ...")
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        records = list(reader)
+    if not records:
+        sys.exit(f"{path} has no data rows.")
+    yield "local CSV", list(records[0].keys()), records
+
+
 def main():
     parser = argparse.ArgumentParser(description=f"Download {DATASET_ID} and convert it to JSONL")
     parser.add_argument("--output", default=DEFAULT_OUTPUT, help="Output JSONL path")
@@ -95,32 +128,23 @@ def main():
     parser.add_argument("--text-column", default=None, help="Override the detected text column")
     parser.add_argument("--label-column", default=None, help="Override the detected label column")
     parser.add_argument("--seed", type=int, default=42, help="Shuffle seed (default: 42)")
+    parser.add_argument("--csv", default=None,
+                        help="Convert this local CSV file instead of downloading from Hugging Face")
     args = parser.parse_args()
 
-    try:
-        from datasets import load_dataset
-    except ImportError:
-        sys.exit("The 'datasets' package is required: pip install datasets")
-
-    print(f"Downloading {args.dataset_id} ...")
-    try:
-        dataset = load_dataset(args.dataset_id, token=os.environ.get("HF_TOKEN"))
-    except Exception as e:
-        sys.exit(f"Download failed: {e}\nIf the dataset is gated, accept its terms on "
-                 f"huggingface.co and export HF_TOKEN=hf_... before re-running.")
+    sources = _load_csv(args.csv) if args.csv else _load_hf_splits(args.dataset_id)
 
     rows = []
     label_counts = Counter()
-    for split_name, split in dataset.items():
-        columns = split.column_names
+    for source, columns, records in sources:
         text_col = args.text_column or _pick_column(columns, TEXT_COLUMNS, "text")
         label_col = args.label_column or _pick_column(columns, LABEL_COLUMNS, "label")
-        class_names = _label_names(split, label_col)
-        print(f"  split '{split_name}': {len(split)} rows, columns {columns}")
+        class_names = _label_names(records, label_col) if not args.csv else None
+        print(f"  {source}: {len(records)} rows, columns {columns}")
         print(f"    using text='{text_col}', label='{label_col}'"
               + (f", class names {class_names}" if class_names else ""))
 
-        for record in split:
+        for record in records:
             text = record[text_col]
             if not isinstance(text, str) or not text.strip():
                 continue
@@ -128,7 +152,7 @@ def main():
             label = normalise_label(raw, class_names)
             shown = f"{raw} ({class_names[raw]})" if class_names and isinstance(raw, int) else str(raw)
             label_counts[(shown, label)] += 1
-            rows.append((text, label, split_name))
+            rows.append((text, label, source))
 
     print("\nLabel mapping used (raw value -> label: count):")
     for (raw, label), n in sorted(label_counts.items()):
