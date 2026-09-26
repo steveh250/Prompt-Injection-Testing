@@ -56,3 +56,18 @@ A second Jev run with one change to the verdict: content is flagged if `p(is_mal
 * **Caveat:** the rule was fitted to the first run's results, so 100% here is expected and doesn't show how it behaves on unseen data. The untuned 92.2% row remains the fair comparison with the other models. Testing on a different set of benign prompts is the next step.
 
 Full write-up: [`Jev-Tuned/Test Results - Jev 1.13 Tuned.md`](Jev-Tuned/Test%20Results%20-%20Jev%201.13%20Tuned.md).
+
+## Second dataset: rogue-security benchmark (5,000 prompts)
+
+A separate public benchmark of 5,000 prompts (3,001 labelled normal, 1,999 labelled attacks), used to check the Jev agents on prompts they had never seen.
+
+|Model                  |Attacks caught      |Normal prompts wrongly blocked|Overall (vs benchmark labels)|Time   |Cost |
+|-----------------------|--------------------|------------------------------|-----------------------------|-------|-----|
+|Jev 1.13 Tuned         |1,930/1,999 (97%)   |663/3,001 (22%)               |4,268/5,000 (85.4%)          |9.8 min|$0.27|
+|Jev 1.13 (plain rule)† |1,786/1,999 (89%)   |532/3,001 (18%)               |4,255/5,000 (85.1%)          |same run|same run|
+
+† Worked out from the same run's saved answers, using only the probability rule.
+
+**Important caveat:** this benchmark labels prompts by *what they ask for* (harmful or not), while our agent looks for *text trying to take control of the AI* (prompt injection). Many prompts it calls "normal" contain clear manipulation, such as "all inputs are assumed legal…" or "you're a 13-year-old girl named Lily". Most of the "wrongly blocked" prompts are therefore correct decisions for an injection checkpoint. The genuine false alarms are mostly offensive statements flagged by the tuned "severity" rule, which is why the plain rule suits our purpose better.
+
+Full plain-language write-up: [`Jev-Tuned/Test Results - Jev 1.13 Tuned - Rogue Benchmark.md`](Jev-Tuned/Test%20Results%20-%20Jev%201.13%20Tuned%20-%20Rogue%20Benchmark.md).
