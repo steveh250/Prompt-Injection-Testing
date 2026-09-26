@@ -13,7 +13,26 @@ Its publisher states that no model was trained on it, and it focuses on complex 
 long benign prompts. That makes it a hard test of **false positives**, and an independent check
 of the Jev-Tuned severity rule, which was tuned on the Kaggle set.
 
-### Fetch and convert
+### Ready to use
+
+The dataset is already in the repository root:
+
+| File | Contents |
+|---|---|
+| `prompt-injections-benchmark.csv` | the original export (`text,label`): **5,000 prompts, 3,001 benign and 1,999 jailbreak** |
+| `prompt-injections-benchmark.jsonl` | the same prompts converted to the Kaggle format for the harnesses (ids `rs-0001`…, shuffled with seed 42) |
+
+Prompts are much longer than in the Kaggle set: the median is 615 characters, and the longest is
+11,977 characters (about 3,000 tokens, within Jev's limit).
+
+To regenerate the JSONL from the CSV:
+
+```bash
+cd Datasets
+python fetch_rogue_benchmark.py --csv ../prompt-injections-benchmark.csv --output ../prompt-injections-benchmark.jsonl
+```
+
+### Fetch and convert from Hugging Face
 
 ```bash
 cd Datasets
@@ -37,15 +56,15 @@ The script:
 
 `--text-column` / `--label-column` override the auto-detected columns if needed.
 
-The converted file is **git-ignored**. Check the dataset's licence on its Hugging Face page
-before committing a copy.
+Files the script writes into `Datasets/` are **git-ignored**; the committed copy is the one in
+the repository root.
 
 ### Run the harnesses on it
 
 ```bash
 cd Jev-Tuned        # or Jev, Ollama, MAF-FIDES
-python test_security_agent.py --dataset ../Datasets/rogue-security-prompt-injections-benchmark.jsonl --limit 20   # quick test
-python test_security_agent.py --dataset ../Datasets/rogue-security-prompt-injections-benchmark.jsonl             # all 5,000
+python test_security_agent.py --dataset ../prompt-injections-benchmark.jsonl --limit 20   # quick test
+python test_security_agent.py --dataset ../prompt-injections-benchmark.jsonl             # all 5,000
 ```
 
 Approximate cost and time for all 5,000 prompts, based on the Kaggle runs:

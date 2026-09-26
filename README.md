@@ -13,7 +13,8 @@ The research originated from the **RFP Responder** multi-agent solution, which e
 ```
 Prompt-Injection-Testing/
 ├── README.md                                          # This file
-├── security_agent-Prompt_INJECTION_And_Benign_DATASET.jsonl  # Shared test dataset
+├── security_agent-Prompt_INJECTION_And_Benign_DATASET.jsonl  # Shared test dataset (Kaggle, 500)
+├── prompt-injections-benchmark.csv / .jsonl           # rogue-security benchmark (5,000)
 ├── Ollama/                                            # LLM-based inline security agent
 │   ├── README.md
 │   ├── ARCHITECTURE.md
@@ -72,9 +73,11 @@ A curated dataset of **500 labelled prompts** (250 malicious, 250 benign) used b
 
 ### Additional datasets
 
-[`Datasets/`](Datasets/README.md) has a script that fetches the 5,000-prompt
-`rogue-security/prompt-injections-benchmark` from Hugging Face and converts it to the same format,
-for an independent test (especially of false positives). Run any harness on it with `--dataset`.
+`prompt-injections-benchmark.jsonl` (in the repository root, converted from
+`prompt-injections-benchmark.csv`) is the 5,000-prompt `rogue-security/prompt-injections-benchmark`
+from Hugging Face: 3,001 benign and 1,999 jailbreak prompts, for an independent test (especially of
+false positives). Run any harness on it with `--dataset ../prompt-injections-benchmark.jsonl`.
+See [`Datasets/README.md`](Datasets/README.md) for how it was converted.
 
 ---
 
