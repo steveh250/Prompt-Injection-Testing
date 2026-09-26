@@ -30,11 +30,14 @@ Prompt-Injection-Testing/
 │   ├── security_agent.py
 │   ├── test_security_agent.py
 │   └── requirements.txt
-└── Jev-Tuned/                                         # Jev with a probability-OR-severity verdict
+├── Jev-Tuned/                                         # Jev with a probability-OR-severity verdict
+│   ├── README.md
+│   ├── security_agent.py
+│   ├── test_security_agent.py
+│   └── requirements.txt
+└── Datasets/                                          # Scripts to fetch additional test datasets
     ├── README.md
-    ├── security_agent.py
-    ├── test_security_agent.py
-    └── requirements.txt
+    └── fetch_rogue_benchmark.py
 ```
 
 ---
@@ -64,6 +67,14 @@ A curated dataset of **500 labelled prompts** (250 malicious, 250 benign) used b
 | jailbreaking | 17 |
 | role_playing | 8 |
 | none (benign) | 250 |
+
+---
+
+### Additional datasets
+
+[`Datasets/`](Datasets/README.md) has a script that fetches the 5,000-prompt
+`rogue-security/prompt-injections-benchmark` from Hugging Face and converts it to the same format,
+for an independent test (especially of false positives). Run any harness on it with `--dataset`.
 
 ---
 

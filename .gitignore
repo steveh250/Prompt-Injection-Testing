@@ -11,3 +11,6 @@ venv/
 .env
 *.json.bak
 *_results_*.json
+
+# Downloaded third-party datasets (check licence before committing)
+Datasets/*.jsonl
